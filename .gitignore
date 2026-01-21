@@ -1,49 +1,55 @@
-# History files
+# Using the R template plus a few suggestions from ChatGPT specific to Mac and coursework
+
+# ----------------------------
+# R / RStudio
+# ----------------------------
 .Rhistory
 .Rapp.history
-
-# Session Data files
 .RData
 .RDataTmp
-
-# User-specific files
 .Ruserdata
-
-# Example code in package build process
-*-Ex.R
-
-# Output files from R CMD build
-/*.tar.gz
-
-# Output files from R CMD check
-/*.Rcheck/
-
-# RStudio files
 .Rproj.user/
 
-# produced vignettes
-vignettes/*.html
-vignettes/*.pdf
+# R CMD build / check
+*-Ex.R
+/*.tar.gz
+/*.Rcheck/
 
-# OAuth2 token, see https://github.com/hadley/httr/releases/tag/v0.3
-.httr-oauth
-
-# knitr and R markdown default cache directories
+# knitr / R Markdown
 *_cache/
-/cache/
-
-# Temporary files created by R markdown
+*_files/
 *.utf8.md
 *.knit.md
 
-# R Environment Variables
+# Quarto / Pandoc
+.quarto/
+
+# Rendered vignettes (if applicable)
+vignettes/*.html
+vignettes/*.pdf
+
+# OAuth / credentials
+.httr-oauth
 .Renviron
 
-# pkgdown site
+# pkgdown
 docs/
 
-# translation temp files
-po/*~
-
-# RStudio Connect folder
+# RStudio Connect
 rsconnect/
+
+# ----------------------------
+# macOS
+# ----------------------------
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# ----------------------------
+# Course-specific / local data
+# ----------------------------
+data/raw/
+data/intermediate/
+scratch/
+tmp/
+
