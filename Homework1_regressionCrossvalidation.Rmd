@@ -1,0 +1,78 @@
+---
+title: "Homework1_regressionCrossvalidation"
+author: "Jenny Cribbs"
+date: "2026-01-21"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Setup
+
+
+```{r}
+
+library(boot)
+library(tidyverse)
+
+# load the loblolly pine dataset
+d <- Loblolly
+
+# check out the dataset
+summary(d)
+# check data types
+class(d$age) # numeric
+class(d$height) # numeric
+class(d$Seed) # ordered factor
+
+# simple linear regression with the two continuous variables
+m1 <- lm(d$height ~ d$age)
+plot(m1)
+plot(d$height ~ d$age, xlab = "Age (years)", ylab = "Height (ft)")
+
+```
+
+It seems like the loblolly dataset violates some of the assumptions of linear regression. The base R function "plot" for the model results shows an uneven distribution of fitted versus residual values. The residual error is higher for values in the middle of the range compared with values near zero and values well over 50. In addition the Q-Q plot, deviates from the one-to-one line with points near zero falling above the line and points near theoretical quantile 2 falling below the line. Ideally, points should fall close to the one-to-one line on the Q-Q plot and residual error should be randomly distributed across the range of fitted values. Exploring the raw data may help understand why linear regression is not a good fit. 
+
+```{r}
+# look at the distributions of the variables
+hist(d$age, xlab = "Tree Age (years)", main = "Age of Loblolly Pines")
+unique(d$age) # 6 age classes
+hist(d$height, xlab = "Tree Height (ft)", main = "Height of Loblolly Pines", breaks = 30)
+
+```
+First, although the age variable is numeric, it appears to have been recorded as 6 age classes (3, 5, 10, 15, 20, 25) rather than a continuous value in years. This explains the clumped data points in the plot of the raw data below. Second, the response variable height does not appear to be normally distributed. In fact, the histogram shows a high frequency of short trees with the rest of the distribution more flat than bell-shaped. Looking at the raw data, it appears the heights are continuous numeric values rather than height classes. The large number of short trees may be consistent with a forest with more saplings than tall mature trees. 
+
+```{r}
+plot(d$age, d$height, xlab = "Age (years)", ylab = "Height (ft)")
+abline(m1, col = "red")
+```
+
+Looking at the raw data and the linear regression line, it seems like simple linear regression could predict the height of a loblolly pine pretty well based on it's age within the range of 0-25 years. However, as the Q-Q and residual plots suggested, it seems the linear regression will tend to underestimate tree height between ages 10-20 and overestimate tree height above 25 years. Based on the overall shape of the data and knowledge of tree growth patterns, I would expect the linear regression predictions to become increasingly nonsensical as tree age increases. Like many pines, loblolly pines can live for over 100 years. Using the coefficients from the m1 model output with age 100, yields a height prediction of 257.69 (height = -1.31 + 2.59 * 100). This is already well over the tallest known loblolly pines (178ft), and it's clear the predictions would get more absurd for the oldest loblolly pine (300 years+). 
+
+```{r}
+# taking the natural log of height to see if model improves
+m2 <- lm(log(height) ~ age, data = d)
+plot(m2)
+```
+
+The Q-Q plot looks quite a bit worse and although the scale on the the residual plot reflects smaller residual values, they still don't look evenly distributed. The transformation may not be that helpful, and this data may require a nonlinear relationship. A quick Google Search suggests something like a nonlinear growth model (nls) might provide a better fit. 
+
+## K-Fold Crossvalidation
+
+Haven't done this before, so I'm adapting the code from page 215 of the textbook. Switching to the glm function because the bootpackage cv.glm does not seem to work with the simple lm model above, but I think glm and lm should be doing the same or similar things with this simple dataset?
+
+```{r }
+set.seed(11)
+cv.error.10 <- rep(0, 10) 
+for (i in 1:10) { 
+  glm.fit <- glm(height ~ age, data = d) 
+  cv.error.10[i] <- cv.glm(d, glm.fit, K = 10)$delta[1] } 
+
+cv.error.10
+
+```
+
+It looks like the error is relatively consistent across all 10 folds. 
