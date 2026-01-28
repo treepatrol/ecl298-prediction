@@ -11,7 +11,7 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ## Data Description 
 
-During the summer of 2023, my UC Davis field crew and my collaborator's UCSB field crew surveyed 56 plots randomly selected plots within sugar pine habitat in Yosemite. To test whether fire impacted WPBR or sugar pine recruitment, 23 plots were established in the Rim Fire footprint. Average extent (% of plots with ≥ 1 infection) and infection rate (% of all live stems with ≥ 1 infection) was 48.2% and 3.7%, respectively, though the extent was much lower in the Rim Fire plots (26.1%) compared to the primary plots (63.6%). Our generalized linear mixed models of infection rate suggested that fire and the presence of alternate hosts were important correlates of WPBR. As fire severity increased, WPBR infections declined, suggesting that high severity fire may dampen infection rates. Additionally, MPB was typically found in larger diameter stems, and the extent was higher in primary plots (54.6%) compared to the Rim Fire plots (30.4%). Recent surveys from SEKI show that sugar pine and WPBR infection rates are declining, likely due to complex interactions with drought, MPB, and fire. Comparable infection rates in Yosemite suggest that both sugar pine and WPBR may be following a similar trajectory. Though long-term monitoring is needed to quantify trends, our results underscore that restoration will help ensure the persistence of this ecologically important species.
+During the summer of 2023, my UC Davis field crew and my collaborator's UCSB field crew surveyed plots randomly selected plots within sugar pine habitat in Yosemite to determine the incidence of white pine blister rust (WPBR). To test whether fire impacted WPBR or sugar pine recruitment, 23 plots were established in the Rim Fire footprint. 
 
 ## Data Citation and Availability
 
@@ -28,8 +28,8 @@ The data is publically available via the NPS IRMA datastore:
 library(tidyverse)
 
 # load data
-yose_plots <- read_csv("IRMA_YOSE/YOSE_SugarPine_Event.csv")
-yose_trees <- read_csv("IRMA_YOSE/YOSE_SugarPine_Occurrence.csv")
+yose_plots <- read_csv("data/IRMA_YOSE/YOSE_SugarPine_Event.csv")
+yose_trees <- read_csv("data/IRMA_YOSE/YOSE_SugarPine_Occurrence.csv")
 # look at the variables
 colnames(yose_plots)
 colnames(yose_trees)
@@ -39,22 +39,64 @@ Since this dataset needed to meet NPS standards, it contains several columns tha
 
 ```{r}
 # data cleaning
-# remove irrelevant columns
+# remove irrelevant event-level columns
+yose_plots <- yose_plots %>% select(eventID, samplingProtocol, sampleSizeValue_total, startDateTime, verbatimLatitude, verbatimLongitude, eventRemarks)
+# remove irrelevant occurrence-level columns
 yose_trees <- yose_trees %>% select(-basisOfRecord, -scientificName, -individualCount, -organismQuantity, -organismQuantityType, -publicDisplay, -dataAccess, -lifeStage, -sex, -behavior, -covariateSample, -preparations, -identifiedBy, -identificationReferences, -identificationRemarks, -identificationQualifier, -identificationVerificationStatus, -materialSampleID, -recordNumber, -organismRemarks, -identificationID)
-# remove "plot" 48
-# yose48 <- yose_trees[eventID = 48, ]
 
+# join to add plot info to the tree table 
+yose <- left_join(yose_trees, yose_plots, by = "eventID")
+
+# remove "plot" 48 since it doesn't meet plot criteria
+# check that these 34 trees are from plot 48
+yose48 <- yose[yose$eventID == 48, ]
+# subset to keep only trees in normal plots
+yose <- yose[yose_trees$eventID != 48, ]
+
+```
+
+
+## Data Exploration
+
+
+```{r}
 # overview of the data
-summary(yose_trees)
+summary(yose)
+# distributions of the continuous variables
+hist(yose$diameter, breaks = 50)
+hist(yose$height, breaks = 50)
+hist(yose$percentLive, breaks = 50)
 ```
 
+None of these distributions are normal. Percent live is almost bimodal with quite a few zeros for dead trees and many very healthy trees in the high 90s to 100 percent live. There are trees in between, but it took adding a lot of breaks to even see that. I suspect the trees with WPBR will make up a large part of the relatively rare cases in the middle of the percent live spectrum. I'm not sure exactly how to test/show this, but will return to this later. 
 
-## Including Plots
+```{r}
+cor(yose$diameter, yose$height, use = "complete.obs")
+cor(yose$diameter, yose$percentLive, use = "complete.obs")
+cor(yose$height, yose$percentLive, use = "complete.obs")
 
-You can also embed plots, for example:
-
-```{r pressure, echo=FALSE}
-plot(pressure)
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+As expected there is a strong correlation between tree girth and height. There is a weak negative correlation between tree girth and percent live, and not much of a correlation between height and percent live. Very large diameter trees tend to be older, and may simply have had more time to get attacked by pests and pathogens or get damaged mechanically. 
+
+
+```{r}
+# simple linear regression
+m1 <- lm(yose$height ~ yose$diameter)
+# plot height versus diameter
+plot(yose$diameter, yose$height)
+abline(m1, col = "red")
+```
+
+The overall fit looks pretty good, though it might be improved a bit by accounting for the fact that trees grow taller a little faster than they grow wider. The regression line falls a bit below the bulk of the data points from zero to a little less than 100cm in diameter. 
+
+Also, we have an outlier with a height of almost 150 meters. This is almost certainly a data entry error that made it past our data cleaning because the tallest known sugar pines are just over 80m. I actually vaguely remember going through this exercise during initial data cleaning, so either we had a similar error before or somehow the most updated datasheet did not make it on the IRMA site. I'll have to let our NPS partners know!
+
+```{r}
+# look at coefficients
+m1
+# model diagnostic plots 
+plot(m1)
+
+```
+Next steps: check original datasheets, confirm data entry error, fix the outlier point or remove if not possible to correct. Re-run model. Compare the coefficents with allometric equations for sugar pines or pines generally. Consider if transformations or another type of model could do better with the small trees. Both diameter and height have skewed distributions... Consider what to do with the almost bimodal percent live variable and beetle and blister rust observations. Presence/absence is the easiest for both, but the raw data is actually a combination of various signs (beetles: pitch tubes and/or exit holes for one of two species WPBR: active/inactive branch/bole canker counts).
