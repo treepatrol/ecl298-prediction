@@ -1,0 +1,60 @@
+---
+title: "Project_1Data"
+author: "Jenny Cribbs"
+date: "2026-01-27"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Data Description 
+
+During the summer of 2023, my UC Davis field crew and my collaborator's UCSB field crew surveyed 56 plots randomly selected plots within sugar pine habitat in Yosemite. To test whether fire impacted WPBR or sugar pine recruitment, 23 plots were established in the Rim Fire footprint. Average extent (% of plots with ≥ 1 infection) and infection rate (% of all live stems with ≥ 1 infection) was 48.2% and 3.7%, respectively, though the extent was much lower in the Rim Fire plots (26.1%) compared to the primary plots (63.6%). Our generalized linear mixed models of infection rate suggested that fire and the presence of alternate hosts were important correlates of WPBR. As fire severity increased, WPBR infections declined, suggesting that high severity fire may dampen infection rates. Additionally, MPB was typically found in larger diameter stems, and the extent was higher in primary plots (54.6%) compared to the Rim Fire plots (30.4%). Recent surveys from SEKI show that sugar pine and WPBR infection rates are declining, likely due to complex interactions with drought, MPB, and fire. Comparable infection rates in Yosemite suggest that both sugar pine and WPBR may be following a similar trajectory. Though long-term monitoring is needed to quantify trends, our results underscore that restoration will help ensure the persistence of this ecologically important species.
+
+## Data Citation and Availability
+
+National Park Service Inventory and Monitoring Division. 2025. Blister Rust in Sugar Pine Inventory at Yosemite National Park 2023 - Open Format Dataset. National Park Service. Fort Collins CO
+https://doi.org/10.57830/2308454
+
+The data is publically available via the NPS IRMA datastore:
+<https://irma.nps.gov/DataStore/Reference/Profile/2308454>
+
+## Data Exploration
+
+```{r}
+# load packages
+library(tidyverse)
+
+# load data
+yose_plots <- read_csv("IRMA_YOSE/YOSE_SugarPine_Event.csv")
+yose_trees <- read_csv("IRMA_YOSE/YOSE_SugarPine_Occurrence.csv")
+# look at the variables
+colnames(yose_plots)
+colnames(yose_trees)
+```
+
+Since this dataset needed to meet NPS standards, it contains several columns that aren't relevant to this particular study. As explained in the data description, there were two slightly different sampling protocols for this project. The randomly selected plots within sugar pine habitat were evaluated with the primary goal of assessing each tree for WPBR. If there were no sugar pines at the randomly selected point, the plot was shifted up to 500m (this cutoff was to attempt to keep the plot in the same climate strata) or rejected. The high severity fire plots were not shifted since the goal was to understand post-fire effects and regeneraton. One randomly selected plot 48 had no sugar pines, but we recorded data for the trees and understory vegetation since we spent multiple days getting there. Later we found some sugar pines near the trail in the vicinity of point 48. Unfortunately, the trees were so far from the official plot 48 that this really doesn't meet critiera to be considered a plot. Consequently, I am removing it from this dataset. 
+
+```{r}
+# data cleaning
+# remove irrelevant columns
+yose_trees <- yose_trees %>% select(-basisOfRecord, -scientificName, -individualCount, -organismQuantity, -organismQuantityType, -publicDisplay, -dataAccess, -lifeStage, -sex, -behavior, -covariateSample, -preparations, -identifiedBy, -identificationReferences, -identificationRemarks, -identificationQualifier, -identificationVerificationStatus, -materialSampleID, -recordNumber, -organismRemarks, -identificationID)
+# remove "plot" 48
+# yose48 <- yose_trees[eventID = 48, ]
+
+# overview of the data
+summary(yose_trees)
+```
+
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
