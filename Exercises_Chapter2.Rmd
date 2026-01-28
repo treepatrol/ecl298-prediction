@@ -1,0 +1,323 @@
+---
+title: "Exercises_Chapter2"
+author: "Jenny Cribbs"
+date: "2026-01-25"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Basics
+
+```{r}
+# concatenate 4 numbers into a vector
+x <- c(1, 3, 2, 5)
+x
+```
+
+```{r}
+# equals also works
+x = c(1, 6, 2)
+x
+y = c(1, 4, 3)
+```
+
+```{r}
+# add together vectors of the same length
+length(x)
+length(y)
+x + y
+```
+
+```{r}
+# ls shows objects
+ls()
+# rm removes unwanted objects
+rm(x, y)
+ls()
+# remove all objects 
+rm(list = ls())
+```
+```{r}
+# find out about the matrix function
+?matrix
+# create matrix x with 2 rows and 2 columns
+x <- matrix(data = c(1, 2, 3, 4), nrow = 2, ncol = 2)
+x
+sqrt(x)
+x^2
+x^0.5
+```
+
+
+## Simulating Data
+
+The rnorm function will produce n observations from a normal distribution. The defaults are mean = 0 and standard deviation of 1. 
+
+```{r}
+# generate 50 random numbers from the normal distribution
+x <- rnorm(50)
+# look at distribution
+hist(x)
+# generate 50 numbers with mean 50 and sd 0.1
+y <- x + rnorm(50, mean = 50, sd = 0.1)
+# calculate correlation between x and y
+cor(x, y)
+# set seed to make code reproducible
+set.seed(1303)
+rnorm(50)
+```
+
+## Basic Statistics
+
+```{r}
+set.seed(3)
+# generate 100 observations with defaults
+y <- rnorm(100)
+# calculate mean of y
+mean(y)
+# calculate the variance
+var(y)
+# take the sq root of the variance
+sqrt(var(y))
+# same as the sd
+sd(y)
+```
+
+## Graphics
+
+```{r}
+# create vectors 
+x <- rnorm(100)
+y <- rnorm(100)
+# visualize relationship 
+plot(x, y)
+# add labels
+plot(x, y, xlab = "this is the x-axis", ylab = "this is the y-axis", main = "Plot of X vs Y")
+# save as PDF
+# pdf("Figure.pdf")
+# save as jpeg
+# jpeg("Figure.jpg")
+# make the dots green
+plot(x, y, col = "green")
+# done plotting
+# dev.off() # cannot shut down device 1
+```
+
+```{r}
+# create a sequence from 1 to 10
+x <- seq(1, 10)
+x
+x <- 1:10
+x
+x <- seq(-pi, pi, length = 50)
+```
+
+## Contour Plots
+
+```{r}
+# make vector y identical to x
+y <- x
+# create z values associated with x and y
+f <- outer(x, y, function(x, y) cos(y) / (1 + x^2))
+# create a contour plot 
+contour(x, y, f)
+contour(x, y, f, nlevels = 45, add = T)
+# with different z values
+fa <- (f - t(f)) / 2
+contour(x, y, fa, nlevels = 15)
+```
+```{r}
+# image creates a 3D heat map
+image(x, y, fa)
+```
+```{r}
+# persp also creates 3D plots 
+persp(x, y, fa)
+# theta and phi control viewing angle
+persp(x, y, fa, theta = 30)
+persp(x, y, fa, theta = 30, phi = 20)
+persp(x, y, fa, theta = 30, phi = 70)
+persp(x, y, fa, theta = 30, phi = 40)
+```
+## Indexing Data
+
+First number refers to the row, second number to the column [row, column]
+
+```{r}
+A <- matrix(1:16, 4, 4)
+A
+```
+```{r}
+# select an element of the matrix
+A[2, 3] # row 2, column 3
+# select multiple rows and columns
+A[c(1, 3), c(2, 4)]
+# another way
+A[1:3, 2:4]
+# select rows 1 and 2 all columns
+A[1:2, ]
+# select all rows for columns 1 and 2
+A[, 1:2]
+# row 1 
+A[1, ]
+# select all rows except 1 and 3
+A[-c(1, 3), ]
+# select same rows without columns 1, 3, 4
+A[-c(1,3), -c(1, 3, 4)]
+# gives dimensions of a matrix
+dim(A)
+```
+
+## Reading in Data
+
+```{r}
+#install.packages("ISLR2")
+library(ISLR2)
+Auto <- read.table("Auto.data")
+# list datasets
+ls("package:ISLR2")
+View(Auto)
+head(Auto)
+# check dimensions
+dim(Auto)
+# remove missing data
+Auto <- na.omit(Auto) # removes 5 rows with missing data
+dim(Auto)
+# column names
+names(Auto)
+# plot
+plot(Auto$cylinders, Auto$mpg)
+# can make variable names available
+attach(Auto)
+plot(cylinders, mpg)
+```
+```{r}
+# convert number of cylinders to a factor
+cylinders <- as.factor(cylinders)
+# now plot produces boxplots
+plot(cylinders, mpg, col = "red", varwidth = T, horizontal = T, xlab = "number of cylinders", ylab = "miles per gallon")
+```
+```{r}
+# histogram with red bars
+hist(mpg, col = 2, breaks = 15)
+```
+```{r}
+# create a scatterplot matrix for all pairs of variables
+pairs(Auto)
+# scatterplot matrix for a subset of variables
+pairs(
+  ~ mpg + displacement + horsepower + weight + acceleration,
+  data = Auto
+)
+```
+
+```{r}
+# scatterplot
+plot(horsepower, mpg)
+# display name for points of interest
+identify(horsepower, mpg, name)
+# This feature doesn't seem to work well with R markdown
+# Run in console
+```
+
+```{r}
+# summary of the whole dataset
+summary(Auto)
+```
+
+```{r}
+# summary of one variable
+summary(mpg)
+```
+
+## Conceptual Exercises
+
+1. Would a flexible statistical learning method be better or worse than an inflexible method?
+a) The sample size n is extremely large and the number of predictors is small. 
+Both flexible and inflexbile methods should preform well with a large sample size and a small number of predictors. The inflexible methods will likely outperform the flexible methods due to the penalty for extra terms in a linear regression or complexity of the model more broadly. In other words, the inflexible model will do better in terms of parsimony while both should do pretty well with prediction. 
+
+b) The number of predictors is extremely large and the number of observations is small. 
+
+This is a challenging case for any model, but the flexible models should perform much better for the training data. However, they may do worse with the test data if they overfit the trainning data. 
+
+c) The relationship between predictors and response is highly non-linear.
+
+The flexible model will tend to perform much better for the training data, and probably also better for the testing data. The inflexible model will have trouble fitting the data well due to its built-in constraints. 
+
+d) The variance of the error terms is extremely high. 
+
+Although the flexible model may do well for the training dataset, it will likely overfit to the noise present in the high variance. The inflexible model will likely perform better for the test dataset.
+
+2. Classification versus regression
+Inference versus prediction
+provide n and p
+
+a) Regression, inference, n = 500, p = 4
+b) Classification, prediction, n = 20, p = 14
+c) Regression, prediction, n = 52, p = 4
+
+3. Bias-variance decomposition:
+The irreducible error will be a flat line because it not dependant on the model. In general, the bias will be higher for inflexible models and lower for flexible models. However, if the true relationship is linear then an inflexible model could have low bias. The variance will increase with the flexibility of the model. The training error will tend to decline with the flexibility of the model while the test error will decline a bit with flexiblity then increase abruptly and increased flexibility leads to overfitting to noise. 
+
+4. Applications 
+a) Classification: predict whether a tree has WPBR or not (or predict probability of WPBR = regression). Response variable is presence or absence of WPBR. Predictors could be tree size, location/elevation, climate variables (temperature, precipitation). Emphasis could be on prediction of WPBR at an unknown site or on better understanding the importance of factors involved in infection risk (inference).
+Classify burn severity based on satellite imagery and compare to field observations. Response variable = burn severity score, predictors = R, G, B or additional wavelengths, goal = prediction. 
+Classify land cover based on satellite imagery--same details as above. 
+
+b) Regression: Describe tree height based on tree girth. Response variable = height, predictor = DBH, goal = inference understand allometric patterns or prediction to fill in missing height measurements based on known relationships. 
+Estimate the incidence of WPBR based on precipitation across the Sierra Nevada. Response variable = incidence of WPBR (%), response variable = precipitation, goal = inference (understand disease dynamics) or prediction = identify refugia and or at risk areas. 
+
+c) Cluster Analysis: What type of EMF group together? What leaf endophytes group together? Which prism climate variables group together? 
+
+5. Flexible versus inflexible modeling approaches
+When the goal is prediction within a dataset and/or when the dataset is highly nonlinear, a flexible approach will tend to fit the dataset well and provide the best predictions for unknown values within the range. When the goal is inference, a flexible approach will be harder to interpret, so an inflexible approach may be preferable. If the true relationship is known or likely to be linear an inflexible approach will also be preferred. 
+
+6. A parametric approach to regression or classification assumes a distribution while a nonparametric approach does not assume a known distribution and will just fit to the data. A parametric approach is less computationally intensive and may be most appropriate when a certain distribution is reasonable (e.g. normal, count data). The disadvantage is it may not provide the best fit. 
+
+7. K-nearest neighbors
+a) Is it just the hypotenuse of the line 0, 0, 0 and each of those points?
+b) green since the closest point is 5? and that is green
+c) red since the three closest points are green, red, red
+d) large because a non-linear decision boundary means the prediction would benefit fron a larger number of neighbors
+
+## Applied 
+
+```{r}
+ls("package:ISLR2")
+college <- College 
+# numerical summary
+summary(college)
+# pairs plot of first 10 variables
+pairs(college[,1:10])
+```
+```{r}
+# side by side boxplots of outstate versus private
+plot(college$Private, college$Outstate, xlab = "Private College", ylab = "Out of State Tuition")
+```
+```{r}
+# create a new qualitative variable with all no
+elite <- rep("No", nrow(college))
+# change value to yes if Top10pec is over 50%
+elite[college$Top10perc > 50] <- "Yes"
+# make it a qualitative factor
+elite <- as.factor(elite)
+# add to the college dataframe
+college <- data.frame(college, elite)
+# there are 78 elite colleges
+summary(college$elite)
+# outstate tuition at elite colleges?
+plot(college$elite, college$Outstate)
+```
+```{r}
+# show 4 plots in a 2 by 2 pannel
+par(mfrow = c(2, 2))
+# look at the effect of different breaks
+hist(college$Grad.Rate, breaks = 5)
+hist(college$Grad.Rate, breaks = 10)
+hist(college$Grad.Rate, breaks = 20)
+hist(college$Grad.Rate, breaks = 50)
+```
+
