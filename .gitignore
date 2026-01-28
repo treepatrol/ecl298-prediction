@@ -48,8 +48,7 @@ rsconnect/
 # ----------------------------
 # Course-specific / local data
 # ----------------------------
-data/raw/
-data/intermediate/
+data/
 scratch/
 tmp/
 
