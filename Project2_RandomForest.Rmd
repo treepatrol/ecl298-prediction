@@ -39,6 +39,8 @@ yose_clean <- yose %>% select(percentLive, diameter, height, pitchTubes, exitHol
 # use only complete cases for now
 yose_clean <- yose_clean[complete.cases(yose_clean), ]
 
+# sensitivity analysis--how sensitive is the imputation of 0.5 vs. something else
+
 # split data in training (700 observations) and testing (300 observations) 
 i <- sample(960)[1:700]
 train <- yose_clean[i, ]

@@ -20,29 +20,30 @@ dim(bf)
 head(bf)
 # it's a dataframe
 class(bf)
+
+# make it a SpatVector
+bfv <- vect(bf, geom=c("lon", "lat"), crs="+proj=longlat +datum=WGS84")
+
 # basic plot (lon and lat no class)
+terra::plot(bfv[,1:2], cex=0.5, col="red")
 wrld <- geodata::world(path=".")
 bnds <- wrld[wrld$NAME_0 %in% c("Canada", "Mexico", "United States"), ]
-#terra::plot(bnds, border = "black", lwd = 1)
-terra::plot(bf[,1:2], cex=0.5, col="red", add = TRUE)
-
-# pull in bioclimate data
-wc <- geodata::worldclim_global("bio", res=10, ".")
-plot(wc[[c(1, 12)]], nr=2)
-
-
-
+terra::lines(bnds)
 
 ```
 ```{r}
+# pull in bioclimate data
+wc <- geodata::worldclim_global("bio", res=10, ".")
+# look at the worldclim data
+plot(wc[[c(1, 12)]], nr=2)
 # extract climate data for observed locations
-bfc <- extract(wc, bf[ , 1:2])
-# check it out
+bfc <- extract(wc, bfv[ , 1:2])
+# check first three rows
 head(bfc, 3)
-# remove first column
+# remove first column (ID not informative)
 bfc <- bfc[ , -1]
 # temperature versus rainfall
-plot(bfc[ ,"wc2.1_10m_bio_1"], bfc[, "wc2.1_10m_bio_12"], col="red",
+terra::plot(bfc[ ,"wc2.1_10m_bio_1"], bfc[, "wc2.1_10m_bio_12"], col="red",
         xlab="Annual mean temperature (°C)", ylab="Annual precipitation (mm)")
 
 ```
