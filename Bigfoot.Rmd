@@ -3,6 +3,8 @@ title: "Homework2_Bigfoot"
 author: "Jenny Cribbs"
 date: "2026-02-04"
 output: html_document
+editor_options: 
+  chunk_output_type: inline
 ---
 
 ```{r}
@@ -28,7 +30,7 @@ bfv <- vect(bf, geom=c("lon", "lat"), crs="+proj=longlat +datum=WGS84")
 terra::plot(bfv[,1:2], cex=0.5, col="red")
 wrld <- geodata::world(path=".")
 bnds <- wrld[wrld$NAME_0 %in% c("Canada", "Mexico", "United States"), ]
-terra::lines(bnds)
+lines(bnds)
 
 ```
 ```{r}
