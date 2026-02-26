@@ -1,0 +1,546 @@
+---
+title: "Deep Learning Homeowrk"
+author: "Jenny Cribbs"
+date: "2026-02-25"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Deep Learning Homework
+
+Work through the examples in ISLR 10.9 (Deep Learning), especially 10.9.1 to 10.9.4. The remainder is optional. 
+
+```{r}
+### Lab: Deep Learning
+### Note: this lab is slightly different from that in the August 2021 printing of ISLRII
+### and from the on-line version. Here we use the newer keras3 package 
+
+
+# first run this (takes a while)
+# install.packages(c("keras3"))
+
+
+## A Single Layer Network on the Hitters Data
+
+###
+# load textbook data
+library(ISLR2)
+# remove NAs from the hitters data
+Gitters <- na.omit(Hitters)
+# store the number of rows in n
+n <- nrow(Gitters)
+# set a random seed for reproducibility
+set.seed(13)
+# set aside test data
+ntest <- trunc(n / 3)
+testid <- sample(1:n, ntest)
+
+### fit a linear model to predict salary
+lfit <- lm(Salary ~ ., data = Gitters[-testid, ])
+lpred <- predict(lfit, Gitters[testid, ])
+with(Gitters[testid, ], mean(abs(lpred - Salary)))
+
+### set up x and y for glmnet 
+# set up a matrix with scaled predictor variables
+x <- scale(model.matrix(Salary ~ . - 1, data = Gitters))
+# salary as response variable
+y <- Gitters$Salary
+
+### fit the lasso using glmnet
+library(glmnet)
+cvfit <- cv.glmnet(x[-testid, ], y[-testid], type.measure = "mae")
+cpred <- predict(cvfit, x[testid, ], s = "lambda.min")
+mean(abs(y[testid] - cpred))
+
+### set up neural network structure with pipes between layers
+library(keras3)
+## reticulate::use_condaenv(condaenv = "r-tensorflow")
+modnn <- keras_model_sequential(input_shape = ncol(x)) |>
+  layer_dense(units = 50, activation = "relu") |> # 50 hidden units
+  layer_dropout(rate = 0.4) |> 
+  layer_dense(units = 1)
+# add details to control fit and minimize squared error loss
+compile(modnn, loss = "mse", optimizer = optimizer_rmsprop(),
+        metrics = list("mean_absolute_error"))
+
+### fit the model (this one takes a while 1500 epochs!)
+history <- fit(modnn, x[-testid, ], y[-testid], epochs = 1500, 
+               batch_size=32, validation_data=list(x[testid, ], y[testid]))
+library(ggplot2)
+plot(history)
+# evaluate model on test data
+npred <- predict(modnn, x[testid, ])
+# mean salary prediction
+mean(abs(y[testid] - npred))
+
+
+## A Multilayer Network on the MNIST Digit Data
+
+###
+mnist <- dataset_mnist()
+
+# illustrate with terra
+library(terra)
+show_digit <- \(i) {
+  plot(rast(mnist$train$x[i,,]), legend=FALSE,
+       axes=FALSE, col=gray(255:0/255), mar=c(0,0,0,0))
+  text(2, 26, mnist$train$y[i], cex=2)
+}
+par(mfrow=c(5,5), mar=c(0,0,0,0))
+for (i in 1:25) show_digit(i)
+
+x_train <- mnist$train$x
+g_train <- mnist$train$y
+x_test <- mnist$test$x
+g_test <- mnist$test$y
+dim(x_train)
+dim(x_test)
+
+###
+x_train <- array_reshape(x_train, c(nrow(x_train), 784))
+x_test <- array_reshape(x_test, c(nrow(x_test), 784))
+y_train <- to_categorical(g_train, 10)
+y_test <- to_categorical(g_test, 10)
+
+###
+x_train <- x_train / 255
+x_test <- x_test / 255
+
+###
+modelnn <- keras_model_sequential(input_shape = 784) |>
+  layer_dense(units = 256, activation = "relu") |>
+  layer_dropout(rate = 0.4) |>
+  layer_dense(units = 128, activation = "relu") |>
+  layer_dropout(rate = 0.3) |>
+  layer_dense(units = 10, activation = "softmax")
+
+summary(modelnn)
+
+compile(modelnn, loss = "categorical_crossentropy",
+        optimizer = optimizer_rmsprop(), metrics = "accuracy")
+
+system.time(
+  history <- fit(modelnn, x_train, y_train, epochs = 30, 
+                 batch_size = 128, validation_split = 0.2)
+)
+plot(history, smooth = FALSE)
+
+accuracy <- function(pred, truth) {
+  mean(drop(as.numeric(pred)) == drop(truth))
+}  
+
+predict(modelnn, x_test) |> 
+  op_argmax(-1, zero_indexed = T) |> accuracy(g_test)
+
+
+###
+modellr <- keras_model_sequential(input_shape = 784)  |>
+  layer_dense(units = 10, activation = "softmax")
+
+summary(modellr)
+
+compile(modellr, loss = "categorical_crossentropy",
+        optimizer = optimizer_rmsprop(), metrics = c("accuracy"))
+
+fit(modellr, x_train, y_train, epochs = 30,
+    batch_size = 128, validation_split = 0.2)
+
+predict(modellr, x_test) |> op_argmax(-1, zero_indexed = T) |> accuracy(g_test)
+
+
+## 10.9.3 Convolutional Neural Networks
+
+cifar100 <- dataset_cifar100()
+names(cifar100)
+x_train <- cifar100$train$x
+
+par(mar = c(0, 0, 0, 0), mfrow = c(5, 5))
+for (i in 1:25) {
+  terra::plotRGB(terra::rast(x_train[i,,, ]))
+  terra::halo(3,30, cifar100$train$y[i], cex=1.5)
+}
+# elepants
+index <- which(cifar100$train$y == 31)[1:25]
+for (i in index) {
+  terra::plotRGB(terra::rast(x_train[i,,, ]))
+}
+
+g_train <- cifar100$train$y
+x_test <- cifar100$test$x
+g_test <- cifar100$test$y
+dim(x_train)
+range(x_train[1,,, 1])
+x_train <- x_train / 255
+x_test <- x_test / 255
+y_train <- to_categorical(g_train, 100)
+dim(y_train)
+
+model <- keras_model_sequential(input_shape = c(32, 32, 3)) |>
+  layer_conv_2d(filters = 32, kernel_size = c(3, 3),
+                padding = "same", activation = "relu") |>
+  layer_max_pooling_2d(pool_size = c(2, 2)) |>
+  layer_conv_2d(filters = 64, kernel_size = c(3, 3),
+                padding = "same", activation = "relu") |>
+  layer_max_pooling_2d(pool_size = c(2, 2)) |>
+  layer_conv_2d(filters = 128, kernel_size = c(3, 3),
+                padding = "same", activation = "relu") |>
+  layer_max_pooling_2d(pool_size = c(2, 2)) |>
+  layer_conv_2d(filters = 256, kernel_size = c(3, 3),
+                padding = "same", activation = "relu") |>
+  layer_max_pooling_2d(pool_size = c(2, 2)) |>
+  layer_flatten() |>
+  layer_dropout(rate = 0.5) |>
+  layer_dense(units = 512, activation = "relu") |>
+  layer_dense(units = 100, activation = "softmax")
+summary(model)
+
+compile(model, loss = "categorical_crossentropy",
+        optimizer = optimizer_rmsprop(), 
+        metrics = c("accuracy"))
+
+# this takes a while to run  
+history <- fit(model, x_train, y_train, epochs = 30,
+               batch_size = 128, validation_split = 0.2)
+
+predict(model, x_test) |> 
+  op_argmax(-1, zero_indexed = T) |> accuracy(g_test)
+
+
+## 10.9.4 Using Pretrained CNN Models
+
+###
+burl <- "https://www.statlearning.com/s/book_images.zip"
+if (!file.exists("book_images")) {
+  download.file(burl, basename(burl), mode="wb")
+  unzip("book_images.zip")
+}
+image_files <- list.files("book_images", pattern=".jpg$", full.names = TRUE)
+num_images <- length(image_files)
+
+x <- array(dim = c(num_images, 224, 224, 3))
+for (i in 1:num_images) {
+  img <- image_load(image_files[i], target_size = c(224, 224))
+  x[i,,, ] <- image_to_array(img)
+}
+
+x <- imagenet_preprocess_input(x)
+model <- application_resnet50(weights = "imagenet")
+summary(model)
+
+pred6 <- predict(model, x) |>
+  imagenet_decode_predictions(top = 3)
+names(pred6) <- basename(image_files)
+print(pred6)
+
+
+## 10.9.5 IMDb Document Classification
+max_features <- 10000
+imdb <- dataset_imdb(num_words = max_features)
+c(c(x_train, y_train), c(x_test, y_test)) %<-% imdb
+x_train[[1]][1:12]
+
+word_index <- dataset_imdb_word_index()
+decode_review <- function(text, word_index) {
+  word <- names(word_index)
+  idx <- unlist(word_index, use.names = FALSE)
+  word <- c("<PAD>", "<START>", "<UNK>", "<UNUSED>", word)
+  idx <- c(0:3, idx + 3)
+  words <- word[match(text, idx, 2)]
+  paste(words, collapse = " ")
+}
+
+decode_review(x_train[[1]][1:12], word_index)
+
+library(Matrix)
+one_hot <- function(sequences, dimension) {
+  seqlen <- sapply(sequences, length)
+  n <- length(seqlen)
+  rowind <- rep(1:n, seqlen)
+  colind <- unlist(sequences)
+  sparseMatrix(i = rowind, j = colind,
+               dims = c(n, dimension))
+}
+
+x_train_1h <- one_hot(x_train, 10000)
+x_test_1h <- one_hot(x_test, 10000)
+dim(x_train_1h)
+nnzero(x_train_1h) / (25000 * 10000)
+
+set.seed(3)
+ival <- sample(seq(along = y_train), 2000)
+
+library(glmnet)
+fitlm <- glmnet(x_train_1h[-ival, ], y_train[-ival],
+                family = "binomial", standardize = FALSE)
+classlmv <- predict(fitlm, x_train_1h[ival, ]) > 0
+acclmv <- apply(classlmv, 2, accuracy,  y_train[ival] > 0)
+
+par(mar = c(4, 4, 4, 4), mfrow = c(1, 1))
+plot(-log(fitlm$lambda), acclmv)
+
+###
+model <- keras_model_sequential(input_shape = 10000) |>
+  layer_dense(units = 16, activation = "relu") |>
+  layer_dense(units = 16, activation = "relu") |>
+  layer_dense(units = 1, activation = "sigmoid")
+
+compile(model, optimizer = "rmsprop",
+        loss = "binary_crossentropy", metrics = "accuracy")
+
+history <- fit(model, x_train_1h[-ival, ], y_train[-ival],
+               epochs = 20, batch_size = 512,
+               validation_data = list(x_train_1h[ival, ], y_train[ival]))
+
+###
+history <- fit(model, x_train_1h[-ival, ], y_train[-ival], epochs = 20,
+               batch_size = 512, validation_data = list(x_test_1h, y_test))
+
+
+
+## 10.9.6 Recurrent Neural Networks
+
+### Sequential Models for Document Classification
+
+wc <- sapply(x_train, length)
+median(wc)
+sum(wc <= 500) / length(wc)
+maxlen <- 500
+x_train <- pad_sequences(x_train, maxlen = maxlen)
+x_test <- pad_sequences(x_test, maxlen = maxlen)
+dim(x_train)
+dim(x_test)
+x_train[1, 490:500]
+###
+
+model <- keras_model_sequential() |>
+  layer_embedding(input_dim = 10000, output_dim = 32) |>
+  layer_lstm(units = 32) |>
+  layer_dense(units = 1, activation = "sigmoid")
+
+compile(model, optimizer = "rmsprop",
+        loss = "binary_crossentropy", metrics = "accuracy")
+
+history <- fit(model, x_train, y_train, epochs = 10,
+               batch_size = 128, validation_data = list(x_test, y_test))
+
+predy <- predict(model, x_test) > 0.5
+mean(abs(y_test == as.numeric(predy)))
+
+
+### Time Series Prediction
+
+library(ISLR2)
+xdata <- data.matrix(
+  NYSE[, c("DJ_return", "log_volume","log_volatility")]
+)
+istrain <- NYSE[, "train"]
+xdata <- scale(xdata)
+
+lagm <- function(x, k = 1) {
+  n <- nrow(x)
+  pad <- matrix(NA, k, ncol(x))
+  rbind(pad, x[1:(n - k), ])
+}
+
+arframe <- data.frame(log_volume = xdata[, "log_volume"],
+                      L1 = lagm(xdata, 1), L2 = lagm(xdata, 2),
+                      L3 = lagm(xdata, 3), L4 = lagm(xdata, 4),
+                      L5 = lagm(xdata, 5))
+
+arframe <- arframe[-(1:5), ]
+istrain <- istrain[-(1:5)]
+arfit <- lm(log_volume ~ ., data = arframe[istrain, ])
+arpred <- predict(arfit, arframe[!istrain, ])
+V0 <- var(arframe[!istrain, "log_volume"])
+1 - mean((arpred - arframe[!istrain, "log_volume"])^2) / V0
+
+###
+arframed <- data.frame(day = NYSE[-(1:5), "day_of_week"], arframe)
+arfitd <- lm(log_volume ~ ., data = arframed[istrain, ])
+arpredd <- predict(arfitd, arframed[!istrain, ])
+1 - mean((arpredd - arframe[!istrain, "log_volume"])^2) / V0
+
+###
+n <- nrow(arframe)
+xrnn <- data.matrix(arframe[, -1])
+xrnn <- array(xrnn, c(n, 3, 5))
+xrnn <- xrnn[,, 5:1]
+xrnn <- aperm(xrnn, c(1, 3, 2))
+dim(xrnn)
+
+###
+model <- keras_model_sequential(input_shape = list(5, 3)) |>
+  layer_simple_rnn(units = 12, dropout = 0.1, recurrent_dropout = 0.1) |>
+  layer_dense(units = 1)
+
+compile(model, optimizer = optimizer_rmsprop(), loss = "mse")
+
+history <- fit(model, xrnn[istrain,, ], arframe[istrain, "log_volume"],
+               batch_size = 64, epochs = 200,
+               validation_data =
+                 list(xrnn[!istrain,, ], arframe[!istrain, "log_volume"]))
+
+kpred <- predict(model, xrnn[!istrain,, ])
+1 - mean((kpred - arframe[!istrain, "log_volume"])^2) / V0
+
+###
+model <- keras_model_sequential(input_shape = c(5, 3)) |>
+  layer_flatten() |>
+  layer_dense(units = 1)
+
+x <- model.matrix(log_volume ~ . - 1, data = arframed)
+colnames(x)
+
+arnnd <- keras_model_sequential(input_shape = ncol(x)) |>
+  layer_dense(units = 32, activation = 'relu') |>
+  layer_dropout(rate = 0.5) |>
+  layer_dense(units = 1)
+
+compile(arnnd, loss = "mse",
+        optimizer = optimizer_rmsprop())
+
+history <- fit(arnnd, x[istrain, ], arframe[istrain, "log_volume"], 
+               epochs = 100, batch_size = 32, validation_data =
+                 list(x[!istrain, ], arframe[!istrain, "log_volume"]))
+
+npred <- predict(arnnd, x[!istrain, ])
+1 - mean((arframe[!istrain, "log_volume"] - npred)^2) / V0
+
+
+```
+
+
+## ISLR Chapter 10 Exercise 7
+
+Fit a neural network to the Default data. Use a single hidden layer
+with 10 units, and dropout regularization. Have a look at Labs 10.9.1–
+10.9.2 for guidance. Compare the classification performance of your
+model with that of linear logistic regression.
+
+```{r}
+## A Single Layer Network with 10 units on the Default data
+
+###
+# load textbook data
+library(ISLR2)
+# remove NAs from the default data
+Gefault <- na.omit(Default) # no NAs?
+# store the number of rows in n
+n <- nrow(Gefault)
+# set a random seed for reproducibility
+set.seed(13)
+# set aside test data
+ntest <- trunc(n / 3)
+testid <- sample(1:n, ntest)
+
+### fit a logistic model to predict salary
+glmfit <- glm(default ~ ., 
+              data = Default[-testid, ], 
+              family = binomial)
+
+probs <- predict(glmfit, Default[testid, ], type = "response")
+
+#pred_class <- ifelse(probs > 0.5, "Yes", "No")
+
+#mean(pred_class != Default$default[testid])
+
+### set up x and y for glmnet 
+# set up a matrix with scaled predictor variables
+x <- scale(model.matrix(default ~ . - 1, data = Default))
+# salary as response variable
+# check levels of factors for y
+levels(y)
+# code Yes as 1 and no as 0 (glm net requires numeric)
+y_num <- ifelse(y == "Yes", 1, 0)
+
+### fit the lasso using glmnet
+library(glmnet)
+
+# lasso regularization 
+cvfit <- cv.glmnet(x[-testid, ], y_num[-testid], family = binomial, type.measure = "deviance")
+cpred <- predict(cvfit, x[testid, ], s = "lambda.min", type = "response")
+pred_class <- ifelse(cpred > 0.5, 1, 0)
+mean(pred_class != y_num[testid] - cpred)
+
+### set up neural network structure with pipes between layers
+library(keras3)
+## reticulate::use_condaenv(condaenv = "r-tensorflow")
+modnn <- keras_model_sequential(input_shape = ncol(x)) |>
+  layer_dense(units = 10, activation = "relu") |> # 10 hidden units
+  layer_dropout(rate = 0.4) |> 
+  layer_dense(units = 1, activation = "sigmoid")
+# add details to control fit and minimize squared error loss
+compile(modnn, loss = "binary_crossentropy", optimizer = optimizer_rmsprop(),
+        metrics = list("accuracy"))
+
+### fit the model (this one takes a while 1500 epochs!)
+history <- fit(modnn, x[-testid, ], y_num[-testid], epochs = 1500, 
+               batch_size=32, validation_data=list(x[testid, ], y[testid]))
+# load ggplot2
+library(ggplot2)
+# visualize the mean error for test and train data
+plot(history)
+# evaluate final model on test data
+npred <- predict(modnn, x[testid, ])
+pred_class <- ifelse(npred > 0.5, 1, 0)
+# mean salary prediction
+mean(pred_class != y_num[testid])
+
+```
+
+```{r}
+# logistic regression model for comparison
+glm.fits <- glm(default ~ student + balance + income, data = Default , family = binomial)
+# look at the logistic regression model
+summary(glm.fits)
+# use logistic regression model to predict for test data
+lpred <- predict(glm.fits, Default[testid, ], type = "response")
+
+# calculate AUC for logistic and neural net models
+library(pROC)
+# calculate AUC
+glm_auc <- roc(y_num[testid], lpred)$auc
+nn_auc  <- roc(y_num[testid], npred)$auc
+
+# compare AUC 
+glm_auc
+nn_auc
+```
+
+The logistic regression model ran almost instantly while the neural net took a few minutes on my laptop. The AIC for the logistic regression model is 1579.5, but that doesn't tell us much alone and we can't compute AIC for the neural net. The area under the curve provides a better comparison of model performance. The logistic model (0.96) slightly outperforms the neural net (0.9582), though they are nearly equal. 
+
+## ISLR Chapter 
+
+From your collection of personal photographs, pick 10 images of an-
+imals (such as dogs, cats, birds, farm animals, etc.). If the subject
+does not occupy a reasonable part of the image, then crop the image.
+
+```{r}
+# bring in images of plants, mushrooms, and animals
+image_files <- list.files("/Users/jennifercribbs/Documents/R-Projects/ecl298-prediction/data/photos", pattern=".jpg$", full.names = TRUE)
+# not sure why it is only bringing in 7/10
+num_images <- length(image_files)
+
+# create an array with three channels
+x <- array(dim = c(num_images, 224, 224, 3))
+for (i in 1:num_images) {
+  img <- image_load(image_files[i], target_size = c(224, 224))
+  x[i,,, ] <- image_to_array(img)
+}
+# load the pre-trained model
+x <- imagenet_preprocess_input(x)
+# set default weights
+model <- application_resnet50(weights = "imagenet")
+# look at model structure
+summary(model)
+# classify images
+pred <- predict(model, x) |>
+  imagenet_decode_predictions(top = 5)
+names(pred) <- basename(image_files)
+print(pred)
+```
+
+The resnet50 model did quite well with animals, okay with mushrooms, and terribly with plants. Because I study trees and forest plant communities, I have many more plant photos than animal photos. I was not surprised that the model did not get the foxtail pines correc to species, but I was surprised it did not guess tree. It's top guess was cliff dwelling and picket fence for my photos of two different mature foxtail pines. In the model's defense, foxtail pines have a pretty variable morphology. For animals, the results were better with slug being the top score (.94) for my banana slug photo and llama (0.86) was also correct. I had two photos of a great gray owl (one perched and one flying). I kind of figured this would confuse the model, and it did. These are photos of the same individual bird, but they look really different due to the spread versus folded wings. The owl in flight was misclassified as a bald eagle (0.23). Not very close by ornithology standards, but still the right class (i.e. bird), and at least the score indicates low confidence. The perched owl was misclassified as a ptarmigan (0.36), but interestingly the second guess (.18) was great grey owl, which is correct to species! I also stumped the model with three mushroom photos. Two were of a white amanita: for the first shot, the model correctly (but non-specifically) classified as a mushroom (.93). For the second shot of the same mushroon, which looked really similar to me, but had more soil visible on the cap, the model predicted slug (.87). For a brown mushroom, the model predicted bolete, which I think is incorrect, but even a mycologist would need to see if there were pores or gills under the cap (not visible in the photo). My pretty picture of two gentians got classified as a cabbage butterfly. Overall, it was pretty impressive how well the model did with no training, especially for animals and to a lesser degree mushrooms. For trees and flowers, it was funny how specific and wildly wrong it was. 
