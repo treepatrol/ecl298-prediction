@@ -26,10 +26,12 @@ The data is publically available via the NPS IRMA datastore:
 ```{r}
 # load packages
 library(tidyverse)
+library(randomForest)
 
 # load data
 yose_plots <- read_csv("data/IRMA_YOSE/YOSE_SugarPine_Event.csv")
-yose_trees <- read_csv("data/IRMA_YOSE/YOSE_SugarPine_Occurrence.csv")
+# had to re-run the cleaning scripts to figure out an error in the online tree data
+yose_trees <- read_csv("/Users/jennifercribbs/Documents/R-Projects/MultipleDisturbances/outputSandbox/YOSE_GBIFoccurrence.csv")
 # look at the variables
 colnames(yose_plots)
 colnames(yose_trees)
@@ -40,7 +42,7 @@ Since this dataset needed to meet NPS standards, it contains several columns tha
 ```{r}
 # data cleaning
 # remove irrelevant event-level columns
-yose_plots <- yose_plots %>% select(eventID, samplingProtocol, sampleSizeValue_total, startDateTime, verbatimLatitude, verbatimLongitude, eventRemarks)
+yose_plots <- yose_plots %>% select(eventID, samplingProtocol, sampleSizeValue_total, startDateTime, verbatimLatitude, verbatimLongitude, verbatimElevation, eventRemarks, slope, aspect)
 # remove irrelevant occurrence-level columns
 yose_trees <- yose_trees %>% select(-basisOfRecord, -scientificName, -individualCount, -organismQuantity, -organismQuantityType, -publicDisplay, -dataAccess, -lifeStage, -sex, -behavior, -covariateSample, -preparations, -identifiedBy, -identificationReferences, -identificationRemarks, -identificationQualifier, -identificationVerificationStatus, -materialSampleID, -recordNumber, -organismRemarks, -identificationID)
 
@@ -68,9 +70,26 @@ hist(yose$height, breaks = 50)
 hist(yose$percentLive, breaks = 50)
 ```
 
-None of these distributions are normal. Percent live is almost bimodal with quite a few zeros for dead trees and many very healthy trees in the high 90s to 100 percent live. There are trees in between, but it took adding a lot of breaks to even see that. I suspect the trees with WPBR will make up a large part of the relatively rare cases in the middle of the percent live spectrum. I'm not sure exactly how to test/show this, but will return to this later. 
+None of these distributions are normal. Percent live is almost bimodal with quite a few zeros for dead trees and many very healthy trees in the high 90s to 100 percent live. There are trees in between, but it took adding a lot of breaks to even see that. I suspect the trees with WPBR will make up a large part of the relatively rare cases in the middle of the percent live spectrum.
+
+Prior to re-cleaning this data, I noticed a data entry error (a height of 145.3, which is completely out of range). I re-ran the cleaning scripts and fixed that issue. The tooTall object was just a quick check of our extremely tall trees. They may represent some of our least reliable hypsometer measurements due to the difficulty of measuring very tall trees in a crowded forest, but they are not data entry errors. 
 
 ```{r}
+# look for trees that may be too tall
+tooTall <- filter(yose, height >= 80, ) 
+# 145.3 was entered for DBH and height--fixed, now just 3 very tall trees
+# 3 trees with no height or diameter are actually absences
+filter(yose, is.na(height) & is.na(diameter))
+# remove absences
+yose <- filter(yose, occurrenceID != "E29-PILANA") 
+yose <- filter(yose, occurrenceID != "E7-PILANA")
+yose <- filter(yose, occurrenceID != "E8-PILANA")
+# other missing measurements
+filter(yose, is.na(height) | is.na(diameter))
+```
+
+```{r}
+# check correlations between a few key predictors
 cor(yose$diameter, yose$height, use = "complete.obs")
 cor(yose$diameter, yose$percentLive, use = "complete.obs")
 cor(yose$height, yose$percentLive, use = "complete.obs")
@@ -79,24 +98,314 @@ cor(yose$height, yose$percentLive, use = "complete.obs")
 
 As expected there is a strong correlation between tree girth and height. There is a weak negative correlation between tree girth and percent live, and not much of a correlation between height and percent live. Very large diameter trees tend to be older, and may simply have had more time to get attacked by pests and pathogens or get damaged mechanically. 
 
+```{r}
+# visualize the relationship between height and diameter and species
+species <- ggplot(yose, aes(diameter, height, color = taxonID)) +
+  geom_point(alpha = .2)
+ggsave("species.png", species)
+```
+There don't seem to be obvious species effects other than the fact that sugar pines represent the widest and tallest trees. This makes sense biologically, but also sugar pine was the target species, meaning we measured all mature individuals in sometimes large variable area plots in an effort to get at least 20 sugar pines. The other species were only measured in a smaller 50 by 20m plot. The oaks also don't get as tall as the pines, and resprout after fire. Their very different growth habit will likely not improve prediction for missing conifer values, so I am filtering out the three species of oaks and California bay laurel in order to explore allometric relationships for conifers. 
 
 ```{r}
+# get a list of unique tree species
+unique(yose$taxonID)
+# remove non-conifer species
+yose_cons <- yose %>% filter(taxonID != "UMCA") %>% 
+  filter(taxonID != "QUKE") %>% 
+  filter(taxonID != "QUCH") %>% 
+  filter (taxonID != "QUWI")
+```
+
+
+Compare imputation methods using 1) a published allometric equation for sugar pines in nearby Oakhurst, CA (Zhao et al 2012) 2) simple linear regression, 3) log-log regression based on the idea of power law relationships for tree growth 4) a non-linear asymptotic function, and 5) an unsupervised PCA approach.  
+
+```{r}
+# remove actual missing cases and saplings
+complete <- yose %>% 
+  dplyr::filter(!is.na(height), !is.na(diameter), diameter > 0, height > 0) 
+# set seed
+set.seed(42)
+# use 80% of the data for training
+train_ids <- sample(seq_len(nrow(complete)), 0.8*nrow(complete))
+test_ids  <- setdiff(seq_len(nrow(complete)), train_ids)
+# create a train/test split
+train <- complete[train_ids, ]
+test  <- complete[-train_ids, ]
+
+```
+
+
+```{r}
+# model 1: Zhao et al 2012
+# define a function based on the zhao regression equation for sugar pine
+zhao <- function(diameter) {height <- (diameter - 4.37) / 1.81
+return(height)
+}
+
+# model 2: simple linear regression 
 # simple linear regression
-m1 <- lm(yose$height ~ yose$diameter)
-# plot height versus diameter
-plot(yose$diameter, yose$height)
-abline(m1, col = "red")
+slr <- lm(height ~ diameter, data = train)
+# look at coefficients
+summary(slr)
+# model diagnostic plots 
+plot(slr)
+# plot height versus diameter with regression line
+plot(train$diameter, train$height)
+abline(slr, col = "red")
+
+# model 3: log-log model
+llr <- lm(log(height) ~ log(diameter), data = train)
+# model summary
+summary(llr)
+# diagostic plots
+plot(llr)
+plot(log(train$diameter), log(train$height))
+abline(llr, col = "blue")
+
+
+```
+
+```{r}
+# model 4: nonlinear asymptotic model
+nls_fit <- nls(
+  height ~ 1.3 + a * (1 - exp(-b * diameter)),
+  data = complete,
+  start = list(a = 60, b = 0.02)
+)
+
 ```
 
 The overall fit looks pretty good, though it might be improved a bit by accounting for the fact that trees grow taller a little faster than they grow wider. The regression line falls a bit below the bulk of the data points from zero to a little less than 100cm in diameter. 
 
-Also, we have an outlier with a height of almost 150 meters. This is almost certainly a data entry error that made it past our data cleaning because the tallest known sugar pines are just over 80m. I actually vaguely remember going through this exercise during initial data cleaning, so either we had a similar error before or somehow the most updated datasheet did not make it on the IRMA site. I'll have to let our NPS partners know!
+## predict missing heights
 
 ```{r}
-# look at coefficients
-m1
-# model diagnostic plots 
-plot(m1)
+# predict with Zhao 2012 equation
+zhao_height <- zhao(test$diameter)
+# predict with slr model
+slr_height <- predict(slr, newdata = test)
+# predict with llr model
+llr_height <- exp(predict(llr, newdata = test))
+# predict with nls model
+nls_height <- predict(nls_fit, newdata = test)
+```
+
+```{r}
+# PCA imputation 
+library(missMDA)
+# select numeric variables for PCA
+vars_numeric <- yose %>% dplyr::select(where(is.numeric))
+# center, scale and impute
+pca_imp <- imputePCA(vars_numeric, scale = TRUE)
+# convert PCA output to a dataframe
+pca_complete <- as.data.frame(pca_imp$completeObs)
+# extract test rows only for comparison
+test$pca_height <- pca_complete[test_ids, "height"]
+```
+
+## Calculate Prediciton Accuracy 
+
+```{r}
+# create a funciton to calculate RMSE
+rmse <- function(obs, pred) sqrt(mean((obs - pred)^2))
+
+# compare models
+rmse(test$height, zhao_height)
+rmse(test$height, slr_height)
+rmse(test$height, llr_height)
+rmse(test$height, nls_height)
+rmse(test$height, test$pca_height)
+
+rmse_table <- data.frame(
+  Model = c("Zhao","SLR","LLR","NLS","PCA"),
+  RMSE = c(
+    rmse(test$height, zhao_height),
+    rmse(test$height, slr_height),
+    rmse(test$height, llr_height),
+    rmse(test$height, nls_height),
+    rmse(test$height, test$pca_height)
+  )
+) %>% arrange(RMSE)
+
+library(flextable)
+flextable(rmse_table)
+save_as_image(rmse_flextable)
+
+AIC(slr, llr, nls)
+                
+```
+```{r}
+# residual plot for zhao model
+plot(test$diameter, test$height - zhao_height)
+abline(h = 0)
+# residual plot for slr
+plot(test$diameter, test$height - slr_height)
+abline(h = 0)
+# residual plot for log-log model
+plot(test$diameter, test$height - llr_height)
+abline(h = 0)
+# residual plot for nls model
+plot(test$diameter, test$height - nls_height)
+abline(h = 0)
+# residual plot for pca
+# residual plot for slr
+plot(test$diameter, test$height - test$pca_height)
+abline(h = 0)
+```
+
+
+```{r}
+# Linear regression CI
+slr_pred <- predict(slr, newdata = test, interval = "confidence", level = 0.95)
+test$slr_fit <- slr_pred[, "fit"]
+test$slr_lwr <- slr_pred[, "lwr"]
+test$slr_upr <- slr_pred[, "upr"]
+
+# Log-log regression CI (remember to back-transform)
+llr_pred <- predict(llr, newdata = test, interval = "confidence", level = 0.95)
+test$llr_fit <- exp(llr_pred[, "fit"])
+test$llr_lwr <- exp(llr_pred[, "lwr"])
+test$llr_upr <- exp(llr_pred[, "upr"])
+```
+
+
+```{r}
+library(ggplot2)
+
+modelComp <- ggplot(test, aes(x = diameter, y = height)) +
+  geom_point(alpha = 0.2) +
+  geom_line(aes(y = zhao_height), color = "yellow") +
+  geom_line(aes(y = slr_height), color = "red") +
+  geom_ribbon(aes(ymin = slr_lwr, ymax = slr_upr), alpha = 0.2, fill = "red") +
+  geom_line(aes(y = llr_fit), color = "blue") +
+  geom_ribbon(aes(ymin = llr_lwr, ymax = llr_upr), alpha = 0.2, fill = "blue") +
+  geom_line(aes(y = nls_height), color = "green") +
+  theme_minimal() +
+  labs(y = "Height", x = "Diameter", title = "Comparison of Height Predictions")
+
+ggsave("modelComparison.png", modelComp)
+```
+
+I experimented with height imputation using four approaches: a published allometric equation (Zhao et al 2012), linear regression, log–log allometric regression, nonlinear asymptotic allometric regression, and PCA-based imputation. Predictive accuracy was evaluated by masking observed heights and comparing predicted values to true measurements using RMSE. For the three regression methods, I used 80% of the data for training while reserving 20% as the test set. The Zhao equation did not require training data since it was based on prior work, though I used it to predict the heights for the same test set. For PCA-based imputation, I used the full dataset. 
+
+
+
+## WPBR Survey
+
+Consider what to do with the almost bimodal percent live variable and beetle and blister rust observations. Presence/absence is the easiest for both, but the raw data is actually a combination of various signs (beetles: pitch tubes and/or exit holes for one of two species WPBR: active/inactive branch/bole canker counts).
+
+```{r}
+# random forest requires complete cases
+
+# use only complete cases for now
+yose_clean <- yose_clean[complete.cases(yose_clean), ]
+
+# sensitivity analysis--how sensitive is the imputation of 0.5 vs. something else
+
+# split data in training (700 observations) and testing (300 observations) 
+i <- sample(960)[1:700]
+train <- yose_clean[i, ]
+test  <- yose_clean[-i, ]
+
+# fit a random forest model without tuning
+rf <- randomForest::randomForest(train$percentLive~., data=train,  importance=TRUE)
 
 ```
-Next steps: check original datasheets, confirm data entry error, fix the outlier point or remove if not possible to correct. Re-run model. Compare the coefficents with allometric equations for sugar pines or pines generally. Consider if transformations or another type of model could do better with the small trees. Both diameter and height have skewed distributions... Consider what to do with the almost bimodal percent live variable and beetle and blister rust observations. Presence/absence is the easiest for both, but the raw data is actually a combination of various signs (beetles: pitch tubes and/or exit holes for one of two species WPBR: active/inactive branch/bole canker counts).
+
+## ISLR Chapter 10 Exercise 7
+
+Fit a neural network to the Default data. Use a single hidden layer
+with 10 units, and dropout regularization. Have a look at Labs 10.9.1–
+10.9.2 for guidance. Compare the classification performance of your
+model with that of linear logistic regression.
+
+```{r}
+## A Single Layer Network with 10 units on the Default data
+
+###
+# load textbook data
+library(ISLR2)
+# remove NAs from the default data
+Gefault <- na.omit(Default) # no NAs?
+# store the number of rows in n
+n <- nrow(Gefault)
+# set a random seed for reproducibility
+set.seed(13)
+# set aside test data
+ntest <- trunc(n / 3)
+testid <- sample(1:n, ntest)
+
+### fit a logistic model to predict salary
+glmfit <- glm(default ~ ., 
+              data = Default[-testid, ], 
+              family = binomial)
+
+probs <- predict(glmfit, Default[testid, ], type = "response")
+
+#pred_class <- ifelse(probs > 0.5, "Yes", "No")
+
+#mean(pred_class != Default$default[testid])
+
+### set up x and y for glmnet 
+# set up a matrix with scaled predictor variables
+x <- scale(model.matrix(default ~ . - 1, data = Default))
+# salary as response variable
+# check levels of factors for y
+levels(y)
+# code Yes as 1 and no as 0 (glm net requires numeric)
+y_num <- ifelse(y == "Yes", 1, 0)
+
+### fit the lasso using glmnet
+library(glmnet)
+
+# lasso regularization 
+cvfit <- cv.glmnet(x[-testid, ], y_num[-testid], family = binomial, type.measure = "deviance")
+cpred <- predict(cvfit, x[testid, ], s = "lambda.min", type = "response")
+pred_class <- ifelse(cpred > 0.5, 1, 0)
+mean(pred_class != y_num[testid] - cpred)
+
+### set up neural network structure with pipes between layers
+library(keras3)
+## reticulate::use_condaenv(condaenv = "r-tensorflow")
+modnn <- keras_model_sequential(input_shape = ncol(x)) |>
+  layer_dense(units = 10, activation = "relu") |> # 10 hidden units
+  layer_dropout(rate = 0.4) |> 
+  layer_dense(units = 1, activation = "sigmoid")
+# add details to control fit and minimize squared error loss
+compile(modnn, loss = "binary_crossentropy", optimizer = optimizer_rmsprop(),
+        metrics = list("accuracy"))
+
+### fit the model (this one takes a while 1500 epochs!)
+history <- fit(modnn, x[-testid, ], y_num[-testid], epochs = 1500, 
+               batch_size=32, validation_data=list(x[testid, ], y[testid]))
+# load ggplot2
+library(ggplot2)
+# visualize the mean error for test and train data
+plot(history)
+# evaluate final model on test data
+npred <- predict(modnn, x[testid, ])
+pred_class <- ifelse(npred > 0.5, 1, 0)
+# mean salary prediction
+mean(pred_class != y_num[testid])
+
+```
+
+```{r}
+# logistic regression model for comparison
+glm.fits <- glm(default ~ student + balance + income, data = Default , family = binomial)
+# look at the logistic regression model
+summary(glm.fits)
+# use logistic regression model to predict for test data
+lpred <- predict(glm.fits, Default[testid, ], type = "response")
+
+# calculate AUC for logistic and neural net models
+library(pROC)
+# calculate AUC
+glm_auc <- roc(y_num[testid], lpred)$auc
+nn_auc  <- roc(y_num[testid], npred)$auc
+
+# compare AUC 
+glm_auc
+nn_auc
+```
+
